@@ -113,6 +113,7 @@ func (a *Adapter) ConsumeMessages(queue *amqp.Queue, channel rabbit.RabbitMQChan
 	}
 }
 
+// ここでRabbitMQをポーリングして、処理している
 func (a *Adapter) PollForMessages(stopCh <-chan struct{}) error {
 	logger := a.logger.Sugar()
 	var err error
@@ -120,11 +121,12 @@ func (a *Adapter) PollForMessages(stopCh <-chan struct{}) error {
 	var msgs <-chan (amqp.Delivery)
 
 	wg := &sync.WaitGroup{}
-	workerCount := a.config.Parallelism
+	workerCount := a.config.Parallelism	// 500
 	wg.Add(workerCount)
 	workerQueue := make(chan amqp.Delivery, workerCount)
 	logger.Info("Starting GoRoutines Workers: ", zap.Int("WorkerCount", workerCount))
 
+	logger.Info("saito: workerCounnt", workerCount)	// 500(このログは出力が1度)
 	for i := 0; i < workerCount; i++ {
 		go a.processMessages(wg, workerQueue)
 	}
@@ -171,8 +173,10 @@ func (a *Adapter) PollForMessages(stopCh <-chan struct{}) error {
 	}
 }
 
+// 並列に500回呼ばれる
 func (a *Adapter) processMessages(wg *sync.WaitGroup, queue <-chan amqp.Delivery) {
 	defer wg.Done()
+	a.logger.Info("saito: processMessages")
 	for msg := range queue {
 		a.logger.Info("Received: ", zap.String("MessageId", msg.MessageId))
 		if err := a.postMessage(&msg); err == nil {

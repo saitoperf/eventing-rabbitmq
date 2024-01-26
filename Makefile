@@ -53,7 +53,6 @@ $(LOCAL_BIN):
 envrc::
 	@echo 'export PATH="$(PATH)"'
 
-
 GCLOUD_SDK_VERSION := 437.0.1
 GCLOUD_BIN := gcloud-$(GCLOUD_SDK_VERSION)-$(PLATFORM)-x86_64
 GCLOUD := $(LOCAL_BIN)/$(GCLOUD_BIN)
@@ -364,23 +363,12 @@ install-knative-eventing: | $(KUBECONFIG) $(KUBECTL) ## Install Knative Eventing
 	$(KUBECTL) wait --for=condition=available deploy/eventing-webhook --timeout=60s --namespace $(EVENTING_NAMESPACE)
 
 .PHONY: install
-ifeq ($(platform_alt)$(arch_alt),macOSarm64)
 install: | $(KUBECTL) $(KO) install-knative-eventing install-rabbitmq-cluster-operator install-rabbitmq-topology-operator ## Install local dev Knative Eventing RabbitMQ - manages all dependencies, including K8S components
-	# When running on a Apple Silicon we need to build the correct image and push it to kind.
-	$(KO) apply --local --platform=linux/arm64 --filename config/broker && \
-	./test/copy_images.sh
+	$(KO) apply -f config/broker
 	$(KUBECTL) wait --for=condition=available deploy/rabbitmq-broker-controller --timeout=60s --namespace $(EVENTING_NAMESPACE)
 	$(KUBECTL) wait --for=condition=available deploy/rabbitmq-broker-webhook --timeout=60s --namespace $(EVENTING_NAMESPACE)
-	$(KO) apply --local --platform=linux/arm64 --filename config/source && \
-	./test/copy_images.sh
-else
-install: | $(KUBECTL) $(KO) install-knative-eventing install-rabbitmq-cluster-operator install-rabbitmq-topology-operator ## Install local dev Knative Eventing RabbitMQ - manages all dependencies, including K8S components
-	$(KO) apply --filename config/broker
-	$(KUBECTL) wait --for=condition=available deploy/rabbitmq-broker-controller --timeout=60s --namespace $(EVENTING_NAMESPACE)
-	$(KUBECTL) wait --for=condition=available deploy/rabbitmq-broker-webhook --timeout=60s --namespace $(EVENTING_NAMESPACE)
-	$(KO) apply --filename config/source
+	$(KO) apply -f config/source
 	$(KUBECTL) wait --for=condition=available deploy/pingsource-mt-adapter --timeout=60s --namespace $(EVENTING_NAMESPACE)
-endif
 
 .PHONY: test-e2e-publish
 test-e2e-publish: | $(KUBECONFIG) ## Run TestKoPublish end-to-end tests  - assumes a K8S with all necessary components installed (Knative & RabbitMQ)
@@ -433,3 +421,19 @@ manifests:
 	mv config/source/sources.knative.dev_rabbitmqsources.yaml config/source/300-rabbitmqsource.yaml
 	controller-gen crd paths="./pkg/apis/eventing/v1alpha1" output:crd:artifacts:config=config/broker/
 	mv config/broker/eventing.knative.dev_rabbitmqbrokerconfigs.yaml config/broker/300-rabbitmqbrokerconfig.yaml
+
+IP := 192.168.1.12
+.PHONY: saito
+saito: install
+	-docker compose up -d -f rabbitmq-source-demo/docker-compose.yml
+	sed 's/uri: .*/uri: '$(shell echo -n $(IP) | openssl base64)'/' rabbitmq-source-demo/rabbit-auth.yml | kubectl apply -f -
+	kubectl delete -f rabbitmq-source-demo/source.yml
+	kubectl delete -f rabbitmq-source-demo/service.yml
+	kubectl apply -f rabbitmq-source-demo/service.yml
+	kubectl apply -f rabbitmq-source-demo/source.yml
+
+N := 500
+.PHONY: req
+req: /usr/lib/python3/dist-packages/pika/ ## Push # requests to RabbitMQ
+	time rabbitmq-source-demo/client.py $(N)
+

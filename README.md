@@ -27,3 +27,27 @@ See [Benchmark and Test](./test/performance/)
 
 This repo falls under the
 [Knative Code of Conduct](https://github.com/knative/community/blob/master/CODE-OF-CONDUCT.md)
+
+## saito test
+```bash
+make saito
+make req
+```
+
+## Verify
+```sh
+# Confirm that 500 fn are activated
+kubectl logs `kubectl get po | grep event-display | cut -f 1 -d ' '` | grep UTC | wc -l
+kubectl logs `kubectl get po | grep event-display | cut -f 1 -d ' '` | grep UTC | sed -n '1p;$p'
+
+# Number of requests received by source
+kubectl logs  `kubectl get po | grep rabbitmqsource | cut -f 1 -d ' '` | grep -e Received | wc -l
+kubectl logs  `kubectl get po | grep rabbitmqsource | cut -f 1 -d ' '` | grep -e Successfully | wc -l
+
+# Time difference between first and last request
+kubectl logs  `kubectl get po | grep rabbitmqsource | cut -f 1 -d ' '` | grep -e Received | sed -n '1p;$p'
+kubectl logs  `kubectl get po | grep rabbitmqsource | cut -f 1 -d ' '` | grep -e Successfully | sed -n '1p;$p'
+
+# Monitoring rabbitmq status
+watch -n 0.1 docker exec -it rabbitmq rabbitmqctl list_queues
+```
